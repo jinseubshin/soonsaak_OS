@@ -31,8 +31,8 @@ if is_cs():
 # Executor: 본인 수당 명세서만 접근 가능 (전체 정산 데이터 차단)
 if is_executor():
     from data.db import get_orders, get_drivers, get_driver_by_id
-    st.info("🚗 **기사 모드** — 본인 수당 명세서만 표시됩니다. 전체 정산·마진 데이터는 표시되지 않습니다.")
-    st.subheader("📋 내 수당 명세서")
+st.info("🚗 **실행팀 모드** — 본인 수당 명세서만 표시됩니다...")
+st.subheader("📋 내 수당 명세서")
     all_orders = get_orders()
     # 기사 이름으로 본인 주문만 필터 (기사 앱과 동일한 방식으로 매칭)
     _drv_name = st.session_state.get("_executor_name", "")
@@ -383,7 +383,7 @@ with tab2:
 
 # ──────────────── Tab 3: 기사별 정산 요약 ────────────────
 with tab3:
-    st.subheader("기사별 정산 요약 (직영팀 조건부 운영비 시각화 포함)")
+   st.subheader("실행팀별 정산 요약 (직영팀 조건부 운영비 시각화 포함)")
 
     orders = get_orders()
     drivers = get_drivers()
