@@ -4,11 +4,19 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from data.db import get_waiting_executors, add_waiting_executor, update_waiting_executor, get_drivers, save_driver
 from utils.footer import show_legal_warning
+from utils.rbac import render_role_selector, is_cs, is_executor
 from utils.masks import mask_phone
 from datetime import datetime
 import pandas as pd
 
 st.set_page_config(page_title="대기 실행자 — 순삭 OS", page_icon="📋", layout="wide")
+
+render_role_selector()
+
+if is_cs() or is_executor():
+    st.error("🚫 이 페이지는 접근 권한이 없습니다.")
+    st.stop()
+
 st.title("📋 대기 실행자 관리 (Waiting List)")
 st.caption("대표가 새로 발굴한 실행자를 먼저 등록 → 매니저가 배정 → 법인폰 소통 의무")
 
@@ -19,7 +27,6 @@ st.warning(
 
 tab1, tab2, tab3 = st.tabs(["📋 대기 명단", "➕ 실행자 등록", "✅ 직영 전환"])
 
-# ──────────────── Tab 1: 대기 명단 ────────────────
 with tab1:
     st.subheader("현재 대기 실행자 목록")
 
@@ -99,7 +106,6 @@ with tab1:
 
                 st.divider()
 
-# ──────────────── Tab 2: 실행자 등록 ────────────────
 with tab2:
     st.subheader("새 대기 실행자 등록")
     st.caption("대표자가 직접 발굴한 실행자를 사전 등록합니다.")
@@ -127,7 +133,6 @@ with tab2:
                 st.success(f"✅ {exec_name} 대기 목록에 등록 완료!")
                 st.rerun()
 
-# ──────────────── Tab 3: 직영 전환 이력 ────────────────
 with tab3:
     st.subheader("직영 전환 이력")
     executors = get_waiting_executors()
