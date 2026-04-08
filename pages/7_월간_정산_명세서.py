@@ -4,17 +4,23 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from data.db import (get_orders, get_drivers, get_settings, get_driver_by_id,
                      get_ace_bonuses, get_manager_settlements, add_manager_settlement)
-from utils.rbac import render_role_selector, require_role, role_badge
+from utils.rbac import render_role_selector, require_role, role_badge, is_executor, is_cs
 from utils.footer import show_legal_warning
 import pandas as pd
 from datetime import datetime
 
 st.set_page_config(page_title="월간 정산 명세서 — 순삭 OS", page_icon="📋", layout="wide")
 render_role_selector()
+
+# ── 실행팀 / CS 접근 차단
+if is_executor() or is_cs():
+    st.error("🚫 **이 페이지는 Owner · 매니저 전용입니다.**")
+    st.stop()
+
 require_role("owner", "manager_sejong", "manager_bonsa")
 
 st.title("📋 월간 정산 명세서")
-st.caption(f"매니저 정산 + 직영팀 정산 + Ace Bonus + 세무 합산 종합 명세서 {role_badge()}")
+st.caption(f"매니저 정산 + 실행팀 정산 + Ace Bonus + 세무 합산 종합 명세서 {role_badge()}")
 
 settings = get_settings()
 DRIVER_RATIO = settings["driver_ratio"]
@@ -87,10 +93,10 @@ with st.container():
         st.metric("철거 인센티브 합계", f"₩{demo_incentive:,}")
 
     with mcol3:
-        st.subheader("실행자 유지 보충 보너스")
+        st.subheader("실행팀 유지 보충 보너스")
         active_drivers = [d for d in drivers if d.get("monthly_jobs", 0) >= ACTIVE_THRESHOLD]
         active_count = len(active_drivers)
-        st.caption(f"월 {ACTIVE_THRESHOLD}건 이상 활성 기사: **{active_count}명**")
+        st.caption(f"월 {ACTIVE_THRESHOLD}건 이상 활성 실행팀: **{active_count}명**")
 
         if active_count >= 3:
             retention_bonus = 200000
@@ -102,10 +108,10 @@ with st.container():
             retention_bonus = 0
             bonus_label = f"1명 이하 ({active_count}명) → 미발생"
 
-        st.metric("실행자 유지 보너스", f"₩{retention_bonus:,}")
+        st.metric("실행팀 유지 보너스", f"₩{retention_bonus:,}")
         st.caption(bonus_label)
         if active_drivers:
-            st.caption(f"활성 기사: {', '.join(d['name'] for d in active_drivers)}")
+            st.caption(f"활성 실행팀: {', '.join(d['name'] for d in active_drivers)}")
 
     st.divider()
     manager_total = MANAGER_BASE + demo_incentive + retention_bonus
@@ -122,9 +128,17 @@ with st.container():
 st.divider()
 
 # ──────────────────────────────────────────
-# SECTION 2: 직영팀(기사) 정산
+# SECTION 2: 실행팀 정산 (블루/옐로우/레드/그린)
 # ──────────────────────────────────────────
-st.header("🚗 2. 직영팀(기사) 정산")
+st.header("🚗 2. 실행팀 정산")
+
+# 실행팀 4개 팀 정의 (팀 코드 → 표시 이름)
+EXEC_TEAMS = {
+    "블루":   "🔵 블루팀",
+    "옐로우": "🟡 옐로우팀",
+    "레드":   "🔴 레드팀",
+    "그린":   "🟢 그린팀",
+}
 
 direct_drivers = [d for d in drivers if d.get("driver_type") == "직영"]
 
@@ -164,7 +178,7 @@ for o in month_orders:
         driver_settle[did]["delayed_jobs"] += 1
 
 if not driver_settle and not direct_drivers:
-    st.info("직영팀 기사가 없거나 이달 완료 주문이 없습니다.")
+    st.info("실행팀이 없거나 이달 완료 주문이 없습니다.")
 else:
     direct_total = 0
     rows = []
@@ -181,8 +195,13 @@ else:
         net_total = subtotal - withholding
         direct_total += net_total
 
+        # 팀 컬러 표시
+        team_color = drv.get("team_color", "")
+        team_label = EXEC_TEAMS.get(team_color, "—")
+
         rows.append({
-            "기사명": drv["name"],
+            "팀": team_label,
+            "팀장명": drv["name"],
             "이달 완료": f"{monthly}건",
             "수거건": f"{s['collection_jobs']}건",
             "철거건": f"{s['demolition_jobs']}건",
@@ -238,7 +257,7 @@ month_ace = [b for b in ace_bonuses if
 if not month_ace:
     st.info("이달 지급된 Ace Bonus가 없습니다.")
 else:
-    ace_rows = [{"기사명": b["driver_name"], "지급액": f"₩{b['amount']:,}", "사유": b.get("reason", "—"),
+    ace_rows = [{"팀장명": b["driver_name"], "지급액": f"₩{b['amount']:,}", "사유": b.get("reason", "—"),
                  "지급일시": b.get("created_at", "—")} for b in month_ace]
     st.dataframe(pd.DataFrame(ace_rows), use_container_width=True, hide_index=True)
     total_ace_month = sum(b["amount"] for b in month_ace)
@@ -287,7 +306,7 @@ o1, o2, o3, o4, o5 = st.columns(5)
 with o1:
     st.metric("👔 매니저 지급", f"₩{manager_total:,}")
 with o2:
-    st.metric("🚗 직영팀 운영비", f"₩{total_direct_op:,}")
+    st.metric("🚗 실행팀 운영비", f"₩{total_direct_op:,}")
 with o3:
     st.metric("🔧 건당 수당 합계", f"₩{total_allowance_all:,}")
 with o4:
@@ -361,7 +380,7 @@ if saved:
         saved_rows.append({
             "정산 기간": rec.get("period", "—"),
             "매니저 지급": f"₩{rec.get('manager_total', 0):,}",
-            "직영팀 운영비": f"₩{rec.get('direct_op_cost', 0):,}",
+            "실행팀 운영비": f"₩{rec.get('direct_op_cost', 0):,}",
             "총 매출": f"₩{rec.get('total_revenue', 0):,}",
             "순이익": f"₩{rec.get('net_profit', 0):,}",
             "적발건": f"{rec.get('flagged_jobs', 0)}건",
