@@ -7,18 +7,25 @@ from data.db import (
     save_phone_logs, get_phone_logs, get_settings
 )
 from utils.footer import show_legal_warning
+from utils.rbac import render_role_selector, is_cs, is_executor
 import pandas as pd
 from datetime import datetime
 import io
 
 st.set_page_config(page_title="법인폰 감사 — 순삭 OS", page_icon="📵", layout="wide")
+
+render_role_selector()
+
+if is_cs() or is_executor():
+    st.error("🚫 이 페이지는 접근 권한이 없습니다.")
+    st.stop()
+
 st.title("📵 법인폰 로그 감사 시스템")
 
 settings = get_settings()
 managers = settings.get("managers", [])
 regions = settings.get("regions", ["본사", "세종"])
 
-# 현재 뷰 모드 (어드민 vs 세종 매니저)
 view_mode = st.sidebar.radio(
     "보기 모드",
     ["🏢 전체 (대표/관리자)", "🗺️ 세종 지역 매니저"],
@@ -27,7 +34,6 @@ view_mode = st.sidebar.radio(
 is_sejong_view = view_mode == "🗺️ 세종 지역 매니저"
 view_region = "세종" if is_sejong_view else None
 
-# 법적 고지 (전체 공통)
 st.error(
     "🔒 **법인폰 로그는 회사의 자산이며 상시 모니터링 대상입니다 (계약서 제48조).** "
     "등록되지 않은 번호와의 통화 및 업무 시간 외 반복 통화는 자동으로 '부정 의심'으로 분류됩니다. "
@@ -71,7 +77,6 @@ def get_all_registered_numbers(region_filter=None):
         if ph:
             registered[ph] = {"name": we["name"], "type": "대기실행자",
                                "raw": we.get("phone", ""), "region": "전체"}
-    # 매니저 법인폰 등록
     for m in managers:
         ph = m.get("corporate_phone", "").replace("-", "").replace(" ", "")
         if ph:
@@ -114,10 +119,8 @@ def get_manager_by_phone(phone_raw):
     return None
 
 
-# ──────────────── Tab 1: 로그 업로드 ────────────────
 with tab1:
     st.subheader("📂 법인폰 통화 로그 CSV 업로드")
-
     st.markdown("""
     **CSV 형식 안내:**
     | 날짜 | 시간 | 발수신 | 번호 | 통화시간 |
@@ -127,7 +130,6 @@ with tab1:
     컬럼명: `date`, `time`, `direction`, `number`, `duration`
     """)
 
-    # 매니저 법인폰 선택
     st.markdown("#### 📱 어느 매니저의 법인폰 로그인가요?")
     if not managers:
         st.warning("등록된 매니저가 없습니다. 설정 > 지역 및 매니저 등록에서 먼저 등록하세요.")
@@ -179,17 +181,12 @@ with tab1:
                 st.error(f"필수 컬럼 누락: {required}")
             else:
                 logs = df.to_dict("records")
-                # 지역 + 매니저 자동 태깅
                 for log in logs:
                     log["region"] = upload_region
                     log["manager_id"] = upload_mgr_id
                     log["corporate_phone"] = selected_mgr.get("corporate_phone", "")
                 save_phone_logs(logs)
-                tagged_count = len([l for l in logs if l.get("region") == "세종"])
-                st.success(
-                    f"✅ {len(logs)}건의 로그 업로드 완료!\n\n"
-                    f"🗺️ [{upload_region} 리드] 자동 태깅: **{len(logs)}건**"
-                )
+                st.success(f"✅ {len(logs)}건의 로그 업로드 완료!")
                 st.dataframe(df.head(10), use_container_width=True)
         except Exception as e:
             st.error(f"파일 파싱 오류: {e}")
@@ -242,20 +239,16 @@ with tab1:
             st.rerun()
 
 
-# ──────────────── Tab 2: 자동 대조 분석 ────────────────
 with tab2:
     st.subheader("🔍 시스템 번호 자동 대조")
-
     logs = get_phone_logs()
     if not logs:
-        st.warning("업로드된 로그가 없습니다. '로그 업로드' 탭에서 먼저 업로드하세요.")
+        st.warning("업로드된 로그가 없습니다.")
     else:
-        # 세종 뷰이면 세종 로그만
         if is_sejong_view:
             logs = [l for l in logs if l.get("region") == "세종"]
             st.info("🗺️ 세종 법인폰(B) 로그만 표시됩니다.")
         else:
-            # 지역 필터 옵션
             region_filter_opt = st.selectbox("지역 필터", ["전체"] + regions)
             if region_filter_opt != "전체":
                 logs = [l for l in logs if l.get("region") == region_filter_opt]
@@ -265,7 +258,7 @@ with tab2:
 
         if logs:
             analysis = []
-            _new_unregistered = []  # 이번 분석에서 새로 감지된 미등록 번호
+            _new_unregistered = []
             for log in logs:
                 raw_num = str(log.get("number", "")).replace("-", "").replace(" ", "")
                 reg = registered.get(raw_num)
@@ -303,19 +296,11 @@ with tab2:
                 })
 
             df_all = pd.DataFrame(analysis)
-            st.dataframe(
-                df_all.drop(columns=["_risk"]),
-                use_container_width=True,
-                hide_index=True
-            )
+            st.dataframe(df_all.drop(columns=["_risk"]), use_container_width=True, hide_index=True)
 
-            # ── 미등록 번호 카카오 알림
             if _new_unregistered:
                 uniq_phones = {u["log_key"]: u for u in _new_unregistered}
-                st.warning(
-                    f"📱 **미등록 번호 {len(uniq_phones)}건** 감지됨 — "
-                    f"대표님께 카카오 알림을 발송하세요."
-                )
+                st.warning(f"📱 **미등록 번호 {len(uniq_phones)}건** 감지됨")
                 if st.button("📲 미등록 번호 알림 즉시 발송", key="send_unregistered_notif"):
                     from utils.notifications import notify_unregistered_phone
                     sent_cnt = 0
@@ -331,16 +316,13 @@ with tab2:
                             pass
                     st.success(f"✅ 미등록 번호 알림 {sent_cnt}건 발송 완료")
 
-            # 세종 리드 요약
             sejong_leads = [a for a in analysis if "[세종 리드]" in a.get("지역", "")]
             if sejong_leads:
-                st.info(f"🗺️ **세종 리드 자동 분류:** {len(sejong_leads)}건 — 세종 법인폰으로 접수된 통화")
+                st.info(f"🗺️ **세종 리드 자동 분류:** {len(sejong_leads)}건")
 
 
-# ──────────────── Tab 3: 부정 의심 리포트 ────────────────
 with tab3:
     st.subheader("🚨 부정 의심 리포트")
-
     logs = get_phone_logs()
     if not logs:
         st.warning("업로드된 로그가 없습니다.")
@@ -392,9 +374,6 @@ with tab3:
         if not suspicious:
             st.success("✅ 부정 의심 통화 없음")
         else:
-            risk_colors = {
-                "🚨 위험": "🔴", "매우높음": "🟠", "높음": "🟡", "중간": "🟡", "낮음": "🟢"
-            }
             risk_order = {"🚨 위험": 5, "매우높음": 4, "높음": 3, "중간": 2, "낮음": 1}
             suspicious_sorted = sorted(suspicious, key=lambda x: risk_order.get(x["위험도"], 0), reverse=True)
 
@@ -424,10 +403,8 @@ with tab3:
             )
 
 
-# ──────────────── Tab 4: 지역별 통화 현황 ────────────────
 with tab4:
     st.subheader("🗺️ 지역별 통화 현황")
-
     logs_all = get_phone_logs()
     if not logs_all:
         st.warning("업로드된 로그가 없습니다.")
@@ -435,14 +412,12 @@ with tab4:
         if is_sejong_view:
             logs_all = [l for l in logs_all if l.get("region") == "세종"]
 
-        # 지역별 집계
         region_stats = {}
         for log in logs_all:
             r = log.get("region") or "미분류"
             if r not in region_stats:
                 region_stats[r] = {"건수": 0, "업무외": 0, "미등록": 0}
             region_stats[r]["건수"] += 1
-
             registered_all = get_all_registered_numbers()
             raw_num = str(log.get("number", "")).replace("-", "").replace(" ", "")
             if raw_num not in registered_all:
@@ -463,7 +438,6 @@ with tab4:
                 })
             st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
-            # 매니저별 법인폰 현황
             st.markdown("#### 📱 매니저별 법인폰 할당 현황")
             for m in managers:
                 if is_sejong_view and m["region"] != "세종":
