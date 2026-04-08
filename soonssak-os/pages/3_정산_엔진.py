@@ -31,10 +31,9 @@ if is_cs():
 # Executor: 본인 수당 명세서만 접근 가능 (전체 정산 데이터 차단)
 if is_executor():
     from data.db import get_orders, get_drivers, get_driver_by_id
-st.info("🚗 **실행팀 모드** — 본인 수당 명세서만 표시됩니다...")
-st.subheader("📋 내 수당 명세서")
+    st.info("🚗 **실행팀 모드** — 본인 수당 명세서만 표시됩니다...")
+    st.subheader("📋 내 수당 명세서")
     all_orders = get_orders()
-IndentationError: unexpected indent
     # 기사 이름으로 본인 주문만 필터 (기사 앱과 동일한 방식으로 매칭)
     _drv_name = st.session_state.get("_executor_name", "")
     _exec_orders = [
@@ -157,12 +156,13 @@ with tab1:
             # ── 정산 보류(Hold) 처리
             if o.get("settlement_hold") and not o.get("settlement_hold_released"):
                 note = f"🔒 정산 HOLD — {o.get('settlement_hold_reason','AI 사진 불일치')}"
-                driver_pay = 0  # Hold 건은 지급 0원으로 표시
+                driver_pay = 0
                 total_revenue_display = total_revenue
             else:
                 total_revenue_display = total_revenue
 
             hold_mark = "🔒" if (o.get("settlement_hold") and not o.get("settlement_hold_released")) else ""
+
             # ── 세무 유형별 계산
             _tax = calc_driver_settlement(driver_pay, drv) if drv else calc_driver_settlement(driver_pay, {})
             _tax_label = _tax["label"]
@@ -240,7 +240,6 @@ with tab1:
 
         st.divider()
         st.subheader("📊 정산 요약 (입금 확인 건)")
-        # Hold 건 제외하고 집계
         confirmed_non_hold = [
             o for o in confirmed
             if not (o.get("settlement_hold") and not o.get("settlement_hold_released"))
@@ -384,7 +383,7 @@ with tab2:
 
 # ──────────────── Tab 3: 기사별 정산 요약 ────────────────
 with tab3:
-   st.subheader("실행팀별 정산 요약 (직영팀 조건부 운영비 시각화 포함)")
+    st.subheader("실행팀별 정산 요약 (직영팀 조건부 운영비 시각화 포함)")
 
     orders = get_orders()
     drivers = get_drivers()
@@ -501,7 +500,7 @@ with tab3:
                 f"조건부 운영비 50%(₩{HALF_COST:,}) 적용 | 차감액: ₩{(FULL_COST - HALF_COST) * len(at_risk_list):,}"
             )
 
-        # ── 월간 정산 명세서 PDF 다운로드 ────────────────
+        # ── 월간 정산 명세서 PDF 다운로드
         st.divider()
         st.subheader("📄 월간 정산 명세서 자동 생성")
         now_dt = __import__("datetime").datetime.now()
@@ -513,7 +512,6 @@ with tab3:
         )
 
         if st.button("📥 HTML 명세서 생성 (인쇄→PDF)", type="primary", key="gen_pdf_btn"):
-            # HTML 명세서 생성 (브라우저에서 인쇄 시 PDF 저장 가능)
             vat_rate = settings.get("vat_rate", 0.10)
             target_rows = rows if pdf_target == "전체 기사" else [r for r in rows if r["기사명"] == pdf_target]
 
@@ -686,7 +684,6 @@ with tab6:
     orders = get_orders()
     drivers = get_drivers()
 
-    # 매니저 직접 성사 철거 건 집계
     manager_closed_demolitions = [
         o for o in orders
         if o.get("manager_closed") and o.get("work_type") == "철거" and o.get("payment_confirmed")
@@ -713,7 +710,6 @@ with tab6:
 
     st.divider()
 
-    # 인센티브 대상 건별 테이블
     st.subheader("🔨 철거 인센티브 대상 건 (매니저 직접 성사)")
     if not manager_closed_demolitions:
         st.info("매니저 직접 성사 철거 건이 없습니다. 배차 스케줄링 > 매니저 모니터링에서 등록하세요.")
@@ -733,7 +729,6 @@ with tab6:
             })
         st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
-        # 건별 인센티브 확정 입력
         st.subheader("📝 건별 인센티브 확정 입력")
         for o in manager_closed_demolitions:
             current = o.get("manager_incentive", DEMO_INCENTIVE_MIN)
@@ -757,7 +752,6 @@ with tab6:
 
     st.divider()
 
-    # 비해당 건 (수거, 직접성사 아닌 건) 안내
     if manager_closed_others:
         st.subheader("ℹ️ 인센티브 미해당 매니저 개입 건 (수거)")
         rows2 = []
@@ -811,10 +805,8 @@ with tab7:
     total_sc_cost = sum(j.get("total_amount", 0) for j in sc_jobs if j.get("status") != "claim_reported")
     total_ace = sum(b["amount"] for b in ace_bonuses)
 
-    # 매니저 인센티브 (기본 운영비)
     manager_base = settings.get("manager_base_cost", 1500000)
 
-    # 직영팀 운영비
     direct_op_cost = sum(
         FULL_COST if d.get("monthly_jobs", 0) >= DIRECT_THRESHOLD else HALF_COST
         for d in drivers if d.get("driver_type") == "직영"
